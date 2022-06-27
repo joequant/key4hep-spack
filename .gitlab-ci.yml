@@ -4,307 +4,323 @@ variables:
   K4_JOBTYPE: Release
   SPACK_VERSION: ""
 
-stages:
-    - prepare-spack
-    - compilation
-    - buildtest
-    - deployment
-    - wait
-    - installtest
-
 ### create an artifact with a pre-configured spack on each push
-setup_spack_push:
-    stage: prepare-spack
+test_cvmfs_publisher:
     tags:
-        - k4-build-spack-release
-        - k4-build-spack-nightlies
+        - sw-nightlies-hsf-org-cvmfs-publisher
     only:
       refs:
-          - pushes
-          - merge_requests
           - schedules
     script:
-        # set up spack inside the k4-spack repo
-        - source scripts/ci_setup_spack.sh
-
-    artifacts:
-        paths:
-            - key4hep-spack.tar.gz
-            - key4hep-spack_centos7-cvmfs.tar.gz
-            - spack 
-        expire_in: 1 month
-
-#### Nightly build of key4hep-stack
-# this job expects the following setup on the runner:
-# * environment variables GITHUB_TOKEN and GITHUB_USER
-#   set in .bashrc or via gitlab ci - to be able to query the commits on github
-# *  (for the nightlies) existing installation of key4hep-stack (stable version) in /cvmfs/sw.hsf.org/spackages
-#   (or whatever is defined in upstreams.yaml)
-#   this may be read-only - could be delivered by cvmfs
-# * writeable directory in /cvmfs/sw-nightlies.hsf.org 
-#   (or whatever is defined in config.yaml)
-#  
-# for the cvmfs deployment:
-# * the gitlab-runner user must be able to ssh into the cvmfs publisher
-# * the cvmfs publisher must be able to rsync with the build machine
-build-spack-nightlies:
-    stage: compilation
-    tags:
-        - k4-build-spack-nightlies
-    needs:
-        - "setup_spack_push"
-    parallel:
-        matrix:
-          - SPACKENV: 
-            - key4hep-nightlies
-            #- key4hep-nightlies-clang
-            #- key4hep-nightlies-debug
-    only:
-      refs:
-          - schedules # Only execute this on scheduled "nightly" pipelines
-      variables:
-          - $K4_JOBTYPE == "Nightlies"
-    script:
-        # set up spack inside the k4-spack repo
-        - source spack/share/spack/setup-env.sh
-        - export KEY4HEP_RELEASE_VERSION=master-`date -I`
-        - python scripts/fetch_nightly_versions.py >> environments/$SPACKENV/spack.yaml
-
-        - cd environments/$SPACKENV
-        # symlink to latest now handled by deploy step
-        #- source pathsetup.sh
-        - spack env activate .
-        - spack repo add ../..
-        - git clone https://gitlab.cern.ch/sft/sft-spack-repo.git
-        - spack repo add ./sft-spack-repo
-        - spack add key4hep-stack@${KEY4HEP_RELEASE_VERSION}
-        - spack concretize -f --test=root --reuse
-        # compile onwards and upwards
-        - spack install --test=root --reuse --no-check-signature
-
-
-### Test lcg release in spack  on the key4hep infrastructure
-build-lcg-release:
-    stage: compilation
-    tags:
-        - k4-build-spack-release
-    needs:
-        - "setup_spack_push"
-    only:
-      refs:
-          - tags
-          - schedules # Only execute this on scheduled "nightly" pipelines
-      variables:
-          - $K4_JOBTYPE == "LCG_Release"
-    script:
-        - source spack/share/spack/setup-env.sh
-        - git clone https://gitlab.cern.ch/sft/sft-spack-repo.git
-        - cd sft-spack-repo
-        - spack env activate -d environments/lcg-release/
-        - spack repo add .
-        - spack concretize -f --test=root --reuse
-        - spack install --test=root --reuse --no-check-signature
-
-### Test deployment of lcg-release
-deploy-cvmfs-lcg:
-    stage: deployment
-    tags:
-        - k4-build-spack-release
-    needs: ["build-lcg-release"]
-    only:
-      refs:
-          - tags
-          - schedules # Only execute this on scheduled "nightly" pipelines
-      variables:
-          - $K4_JOBTYPE == "LCG_Release"
-    script:
-        - ssh cvswhsforg@cvmfs-sw-hsf-org.cern.ch ' bash -c ./cvmfs_deploy.sh'
-
-### deploy the nightlies to cvmfs
-deploy-cvmfs-nightlies:
-    stage: deployment
-    needs: ["build-spack-nightlies"]
-    tags:
-        - k4-build-spack-nightlies
-    only:
-      refs:
-          - schedules # Only execute this on scheduled "nightly" pipelines
-      variables:
-          - $K4_JOBTYPE == "Nightlies"
-    script:
-        - ssh cvswnighthsforg@cvmfs-sw-nightlies-hsf-org.cern.ch ' bash -c ./cvmfs_deploy.sh'
-
-
-#### Release build of key4hep-stack
-# this job expects the following setup on the runner:
-
-# * writeable directory in /cvmfs/sw.hsf.org 
-#   (or whatever is defined in config.yaml)
-#  
-# for the cvmfs deployment:
-# * the gitlab-runner user must be able to ssh into the cvmfs publisher
-# * the cvmfs publisher must be able to rsync with the build machine
-build-spack-release:
-    stage: compilation
-    needs: ["setup_spack_push"]
-    parallel:
-        matrix:
-          - SPACKENV: 
-            - key4hep-release
-            #- key4hep-release-clang
-            #- key4hep-debug
-    tags:
-        - k4-build-spack-release
-    only:
-      refs:
-          - tags
-          - schedules # Only execute this on scheduled pipelines
-      variables:
-          - $K4_JOBTYPE == "Release"
-    script:
-        # set up spack inside the k4-spack repo
-        - source spack/share/spack/setup-env.sh
-        # if this workflow has been started by a tag, use the tag version. if not, use todays date
-        - if [ -z "$CI_COMMIT_TAG" ]; then export K4STACK_VERSION=`date -I`; else export K4STACK_VERSION=$CI_COMMIT_TAG;  fi 
-        - if [ ! -z "$CI_BUILD_TAG" ]; then export K4STACK_VERSION=$CI_BUILD_TAG;  fi 
-        - echo $K4STACK_VERSION
-        # activate environment
-        - cd environments/${SPACKENV}
-        - spack env activate .
-        - spack repo add ../..
-        - git clone https://gitlab.cern.ch/sft/sft-spack-repo.git
-        - spack repo add ./sft-spack-repo
-        # config debug printouts
-        - spack config blame config # debug printout
-        - spack config blame packages # debug printout
-        # in order to set the right version for the key4hep-stack spec, we add it to the
-        # environment now when we now it
-        - spack add key4hep-stack@${K4STACK_VERSION}
-        # compile onwards and upwards
-        - spack install --reuse --no-check-signature | tee -a key4hep-stack-install.log
-        # note the path of the just installed package
-        # so that downstream jobs can source its setup
-        # in an environment, this command should just find the specs  
-        # installed in this environment
-        - spack find -p key4hep-stack@${K4STACK_VERSION} > spackfind.log
-        - cat spackfind.log # debug printout
-        # parse output of spack find
-        # the last line should be, p.ex.
-        # zlib@1.2.11  /cvmfs/sw.hsf.org/spackages/linux-ubuntu20.04-broadwell/gcc-9.3.0/zlib-1.2.11-emkoq3o2mtu377gy6plexktmkqchkgkb
-        # cut can only be used to get the first field - do a double reverse of the string to get the last
-        - SPACKENV_PATH=$(tail -n 1 spackfind.log  |  rev | cut -d " " -f1 | rev)
-        - echo ${SPACKENV_PATH} # debug printout
-        # we want to use the environment name as a variable name
-        # so need to remove some special characters (right now only the hyphen)
-        - echo ${SPACKENV//-/} # debug printout
-        # make the path available to downstream jobs 
-        # for example:
-        #key4hepdebug_PATH=/cvmfs/sw.hsf.org/spackages2/key4hep-stack/2021-06-16/x86_64-centos7-gcc8.3.0-dbg/a7xzrrsha54w4mewe43b4bmxaqxnvg2x
-        - echo "${SPACKENV//-/}_PATH=${SPACKENV_PATH}" >> build.env
-        - cat build.env # debug printout
-    artifacts:
-        # the log could be saved as an artifact, but does not really have more info than stdout
-        #paths:
-        #  - environments/${SPACKENV}/key4hep-stack-install.log
-        reports:
-          dotenv: environments/${SPACKENV}/build.env
-
-
-buildtest-spack-release:
-    stage: buildtest
-    needs:
-        - "build-spack-release"
-        - "setup_spack_push"
-    parallel:
-        matrix:
-          - SPACKENV: 
-            - key4hep-release
-            #- key4hep-debug
-    tags:
-        - k4-build-spack-release
-    only:
-      refs:
-          - tags
-          - schedules # Only execute this on scheduled "nightly" pipelines
-      variables:
-          - $K4_JOBTYPE == "Release"
-    script:
-        - echo ${SPACKENV} # debug printout
-        - ls environments/${SPACKENV} # debug printout
-        # resolve dynamic variable name
-        - K4_SETUP_PATH=${SPACKENV//-/}_PATH
-        - echo ${!K4_SETUP_PATH} # debug printout
-        # run tests, to fail early, even before publishing
-        - source ${!K4_SETUP_PATH}/setup.sh
-        - ./scripts/ci_install_tests.sh
+        - whoami # (expect gitlab-runner)
+        - pwd
+        - sudo su cvswnighthsforg  || true # (expect to fail)
+        - cvmfs_server transaction sw-nightlies.hsf.org
+        - cvmfs_server abort -f sw-nightlies.hsf.org
 
 
 
-deploy-cvmfs-release:
-    stage: deployment
-    needs: ["build-spack-release"]
-    tags:
-        - k4-build-spack-release
-    only:
-      refs:
-          - tags
-          - schedules # Only execute this on scheduled "nightly" pipelines
-      variables:
-          - $K4_JOBTYPE == "Release"
-    script:
-        # todo: once the publisher is set up as a gitlab runner, use the script from the repo
-        - ssh cvswhsforg@cvmfs-sw-hsf-org.cern.ch ' bash -c ./cvmfs_deploy.sh'
-
-wait-cvmfs-release:
-    stage: wait
-    needs:
-        - "build-spack-release"
-        - "setup_spack_push"
-        - "deploy-cvmfs-release"
-    timeout: 20m
-    parallel:
-        matrix:
-          - SPACKENV: 
-            - key4hep-release
-            #- key4hep-debug
-    tags:
-        - cvmfs
-    only:
-      refs:
-          - tags
-          - schedules # Only execute this on scheduled "nightly" pipelines
-      variables:
-          - $K4_JOBTYPE == "Release"
-    script:
-        # resolve dynamic variable name
-        - K4_LATEST_SETUP_PATH=${SPACKENV//-/}_PATH
-        - echo ${!K4_LATEST_SETUP_PATH} # debug printout
-        # wait for the new release to be present on cvmfs
-        # both to be sure that it is available once the pipeline finishes
-        # and so the final install test can use it to check the publication
-        - while [ ! -f ${!K4_LATEST_SETUP_PATH}/setup.sh ]; do sleep 10; done
-
-test-cvmfs-release:
-    stage: installtest
-    needs: ["setup_spack_push", "deploy-cvmfs-release", "build-spack-release", "wait-cvmfs-release"]
-    parallel:
-        matrix:
-          - SPACKENV: 
-            - key4hep-release
-            #- key4hep-debug
-    tags:
-        - cvmfs
-    only:
-      refs:
-          - tags
-          - schedules # Only execute this on scheduled "nightly" pipelines
-      variables:
-          - $K4_JOBTYPE == "Release"
-    script:
-        # resolve dynamic variable name
-        - K4_LATEST_SETUP_PATH=${SPACKENV//-/}_PATH
-        - echo ${!K4_LATEST_SETUP_PATH} # debug printout
-        - source ${!K4_LATEST_SETUP_PATH}/setup.sh
-        - ./scripts/ci_install_tests.sh
-
-
+#stages:
+#    - prepare-spack
+#    - compilation
+#    - buildtest
+#    - deployment
+#    - wait
+#    - installtest
+#
+#### create an artifact with a pre-configured spack on each push
+#setup_spack_push:
+#    stage: prepare-spack
+#    tags:
+#        - k4-build-spack-release
+#        - k4-build-spack-nightlies
+#    only:
+#      refs:
+#          - pushes
+#          - merge_requests
+#          - schedules
+#    script:
+#        # set up spack inside the k4-spack repo
+#        - source scripts/ci_setup_spack.sh
+#
+#    artifacts:
+#        paths:
+#            - key4hep-spack.tar.gz
+#            - key4hep-spack_centos7-cvmfs.tar.gz
+#            - spack 
+#        expire_in: 1 month
+#
+##### Nightly build of key4hep-stack
+## this job expects the following setup on the runner:
+## * environment variables GITHUB_TOKEN and GITHUB_USER
+##   set in .bashrc or via gitlab ci - to be able to query the commits on github
+## *  (for the nightlies) existing installation of key4hep-stack (stable version) in /cvmfs/sw.hsf.org/spackages
+##   (or whatever is defined in upstreams.yaml)
+##   this may be read-only - could be delivered by cvmfs
+## * writeable directory in /cvmfs/sw-nightlies.hsf.org 
+##   (or whatever is defined in config.yaml)
+##  
+## for the cvmfs deployment:
+## * the gitlab-runner user must be able to ssh into the cvmfs publisher
+## * the cvmfs publisher must be able to rsync with the build machine
+#build-spack-nightlies:
+#    stage: compilation
+#    tags:
+#        - k4-build-spack-nightlies
+#    needs:
+#        - "setup_spack_push"
+#    parallel:
+#        matrix:
+#          - SPACKENV: 
+#            - key4hep-nightlies
+#            #- key4hep-nightlies-clang
+#            #- key4hep-nightlies-debug
+#    only:
+#      refs:
+#          - schedules # Only execute this on scheduled "nightly" pipelines
+#      variables:
+#          - $K4_JOBTYPE == "Nightlies"
+#    script:
+#        # set up spack inside the k4-spack repo
+#        - source spack/share/spack/setup-env.sh
+#        - export KEY4HEP_RELEASE_VERSION=master-`date -I`
+#        - python scripts/fetch_nightly_versions.py >> environments/$SPACKENV/spack.yaml
+#
+#        - cd environments/$SPACKENV
+#        # symlink to latest now handled by deploy step
+#        #- source pathsetup.sh
+#        - spack env activate .
+#        - spack repo add ../..
+#        - git clone https://gitlab.cern.ch/sft/sft-spack-repo.git
+#        - spack repo add ./sft-spack-repo
+#        - spack add key4hep-stack@${KEY4HEP_RELEASE_VERSION}
+#        - spack concretize -f --test=root --reuse
+#        # compile onwards and upwards
+#        - spack install --test=root --reuse --no-check-signature
+#
+#
+#### Test lcg release in spack  on the key4hep infrastructure
+#build-lcg-release:
+#    stage: compilation
+#    tags:
+#        - k4-build-spack-release
+#    needs:
+#        - "setup_spack_push"
+#    only:
+#      refs:
+#          - tags
+#          - schedules # Only execute this on scheduled "nightly" pipelines
+#      variables:
+#          - $K4_JOBTYPE == "LCG_Release"
+#    script:
+#        - source spack/share/spack/setup-env.sh
+#        - git clone https://gitlab.cern.ch/sft/sft-spack-repo.git
+#        - cd sft-spack-repo
+#        - spack env activate -d environments/lcg-release/
+#        - spack repo add .
+#        - spack concretize -f --test=root --reuse
+#        - spack install --test=root --reuse --no-check-signature
+#
+#### Test deployment of lcg-release
+#deploy-cvmfs-lcg:
+#    stage: deployment
+#    tags:
+#        - k4-build-spack-release
+#    needs: ["build-lcg-release"]
+#    only:
+#      refs:
+#          - tags
+#          - schedules # Only execute this on scheduled "nightly" pipelines
+#      variables:
+#          - $K4_JOBTYPE == "LCG_Release"
+#    script:
+#        - ssh cvswhsforg@cvmfs-sw-hsf-org.cern.ch ' bash -c ./cvmfs_deploy.sh'
+#
+#### deploy the nightlies to cvmfs
+#deploy-cvmfs-nightlies:
+#    stage: deployment
+#    needs: ["build-spack-nightlies"]
+#    tags:
+#        - k4-build-spack-nightlies
+#    only:
+#      refs:
+#          - schedules # Only execute this on scheduled "nightly" pipelines
+#      variables:
+#          - $K4_JOBTYPE == "Nightlies"
+#    script:
+#        - ssh cvswnighthsforg@cvmfs-sw-nightlies-hsf-org.cern.ch ' bash -c ./cvmfs_deploy.sh'
+#
+#
+##### Release build of key4hep-stack
+## this job expects the following setup on the runner:
+#
+## * writeable directory in /cvmfs/sw.hsf.org 
+##   (or whatever is defined in config.yaml)
+##  
+## for the cvmfs deployment:
+## * the gitlab-runner user must be able to ssh into the cvmfs publisher
+## * the cvmfs publisher must be able to rsync with the build machine
+#build-spack-release:
+#    stage: compilation
+#    needs: ["setup_spack_push"]
+#    parallel:
+#        matrix:
+#          - SPACKENV: 
+#            - key4hep-release
+#            #- key4hep-release-clang
+#            #- key4hep-debug
+#    tags:
+#        - k4-build-spack-release
+#    only:
+#      refs:
+#          - tags
+#          - schedules # Only execute this on scheduled pipelines
+#      variables:
+#          - $K4_JOBTYPE == "Release"
+#    script:
+#        # set up spack inside the k4-spack repo
+#        - source spack/share/spack/setup-env.sh
+#        # if this workflow has been started by a tag, use the tag version. if not, use todays date
+#        - if [ -z "$CI_COMMIT_TAG" ]; then export K4STACK_VERSION=`date -I`; else export K4STACK_VERSION=$CI_COMMIT_TAG;  fi 
+#        - if [ ! -z "$CI_BUILD_TAG" ]; then export K4STACK_VERSION=$CI_BUILD_TAG;  fi 
+#        - echo $K4STACK_VERSION
+#        # activate environment
+#        - cd environments/${SPACKENV}
+#        - spack env activate .
+#        - spack repo add ../..
+#        - git clone https://gitlab.cern.ch/sft/sft-spack-repo.git
+#        - spack repo add ./sft-spack-repo
+#        # config debug printouts
+#        - spack config blame config # debug printout
+#        - spack config blame packages # debug printout
+#        # in order to set the right version for the key4hep-stack spec, we add it to the
+#        # environment now when we now it
+#        - spack add key4hep-stack@${K4STACK_VERSION}
+#        # compile onwards and upwards
+#        - spack install --reuse --no-check-signature | tee -a key4hep-stack-install.log
+#        # note the path of the just installed package
+#        # so that downstream jobs can source its setup
+#        # in an environment, this command should just find the specs  
+#        # installed in this environment
+#        - spack find -p key4hep-stack@${K4STACK_VERSION} > spackfind.log
+#        - cat spackfind.log # debug printout
+#        # parse output of spack find
+#        # the last line should be, p.ex.
+#        # zlib@1.2.11  /cvmfs/sw.hsf.org/spackages/linux-ubuntu20.04-broadwell/gcc-9.3.0/zlib-1.2.11-emkoq3o2mtu377gy6plexktmkqchkgkb
+#        # cut can only be used to get the first field - do a double reverse of the string to get the last
+#        - SPACKENV_PATH=$(tail -n 1 spackfind.log  |  rev | cut -d " " -f1 | rev)
+#        - echo ${SPACKENV_PATH} # debug printout
+#        # we want to use the environment name as a variable name
+#        # so need to remove some special characters (right now only the hyphen)
+#        - echo ${SPACKENV//-/} # debug printout
+#        # make the path available to downstream jobs 
+#        # for example:
+#        #key4hepdebug_PATH=/cvmfs/sw.hsf.org/spackages2/key4hep-stack/2021-06-16/x86_64-centos7-gcc8.3.0-dbg/a7xzrrsha54w4mewe43b4bmxaqxnvg2x
+#        - echo "${SPACKENV//-/}_PATH=${SPACKENV_PATH}" >> build.env
+#        - cat build.env # debug printout
+#    artifacts:
+#        # the log could be saved as an artifact, but does not really have more info than stdout
+#        #paths:
+#        #  - environments/${SPACKENV}/key4hep-stack-install.log
+#        reports:
+#          dotenv: environments/${SPACKENV}/build.env
+#
+#
+#buildtest-spack-release:
+#    stage: buildtest
+#    needs:
+#        - "build-spack-release"
+#        - "setup_spack_push"
+#    parallel:
+#        matrix:
+#          - SPACKENV: 
+#            - key4hep-release
+#            #- key4hep-debug
+#    tags:
+#        - k4-build-spack-release
+#    only:
+#      refs:
+#          - tags
+#          - schedules # Only execute this on scheduled "nightly" pipelines
+#      variables:
+#          - $K4_JOBTYPE == "Release"
+#    script:
+#        - echo ${SPACKENV} # debug printout
+#        - ls environments/${SPACKENV} # debug printout
+#        # resolve dynamic variable name
+#        - K4_SETUP_PATH=${SPACKENV//-/}_PATH
+#        - echo ${!K4_SETUP_PATH} # debug printout
+#        # run tests, to fail early, even before publishing
+#        - source ${!K4_SETUP_PATH}/setup.sh
+#        - ./scripts/ci_install_tests.sh
+#
+#
+#
+#deploy-cvmfs-release:
+#    stage: deployment
+#    needs: ["build-spack-release"]
+#    tags:
+#        - k4-build-spack-release
+#    only:
+#      refs:
+#          - tags
+#          - schedules # Only execute this on scheduled "nightly" pipelines
+#      variables:
+#          - $K4_JOBTYPE == "Release"
+#    script:
+#        # todo: once the publisher is set up as a gitlab runner, use the script from the repo
+#        - ssh cvswhsforg@cvmfs-sw-hsf-org.cern.ch ' bash -c ./cvmfs_deploy.sh'
+#
+#wait-cvmfs-release:
+#    stage: wait
+#    needs:
+#        - "build-spack-release"
+#        - "setup_spack_push"
+#        - "deploy-cvmfs-release"
+#    timeout: 20m
+#    parallel:
+#        matrix:
+#          - SPACKENV: 
+#            - key4hep-release
+#            #- key4hep-debug
+#    tags:
+#        - cvmfs
+#    only:
+#      refs:
+#          - tags
+#          - schedules # Only execute this on scheduled "nightly" pipelines
+#      variables:
+#          - $K4_JOBTYPE == "Release"
+#    script:
+#        # resolve dynamic variable name
+#        - K4_LATEST_SETUP_PATH=${SPACKENV//-/}_PATH
+#        - echo ${!K4_LATEST_SETUP_PATH} # debug printout
+#        # wait for the new release to be present on cvmfs
+#        # both to be sure that it is available once the pipeline finishes
+#        # and so the final install test can use it to check the publication
+#        - while [ ! -f ${!K4_LATEST_SETUP_PATH}/setup.sh ]; do sleep 10; done
+#
+#test-cvmfs-release:
+#    stage: installtest
+#    needs: ["setup_spack_push", "deploy-cvmfs-release", "build-spack-release", "wait-cvmfs-release"]
+#    parallel:
+#        matrix:
+#          - SPACKENV: 
+#            - key4hep-release
+#            #- key4hep-debug
+#    tags:
+#        - cvmfs
+#    only:
+#      refs:
+#          - tags
+#          - schedules # Only execute this on scheduled "nightly" pipelines
+#      variables:
+#          - $K4_JOBTYPE == "Release"
+#    script:
+#        # resolve dynamic variable name
+#        - K4_LATEST_SETUP_PATH=${SPACKENV//-/}_PATH
+#        - echo ${!K4_LATEST_SETUP_PATH} # debug printout
+#        - source ${!K4_LATEST_SETUP_PATH}/setup.sh
+#        - ./scripts/ci_install_tests.sh
+#
+#
