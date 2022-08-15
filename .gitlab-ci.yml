@@ -7,18 +7,31 @@ variables:
 ### create an artifact with a pre-configured spack on each push
 test_cvmfs_publisher:
     tags:
-        - sw-nightlies-hsf-org-cvmfs-publisher
+        - k4-cvmfsdeploy-spack-release
     only:
       refs:
           - schedules
     script:
         - whoami # (expect gitlab-runner)
         - pwd
-        - sudo su cvswnighthsforg  || true # (expect to fail)
-        - cvmfs_server transaction sw-nightlies.hsf.org
-        - cvmfs_server abort -f sw-nightlies.hsf.org
+        - sudo su cvswhsforg  || true # (expect to fail)
+        - cvmfs_server transaction sw.hsf.org
+        - cvmfs_server abort -f sw.hsf.org
 
 
+### create an artifact with a pre-configured spack on each push
+#test_cvmfs_publisher:
+#    tags:
+#        - sw-nightlies-hsf-org-cvmfs-publisher
+#    only:
+#      refs:
+#          - schedules
+#    script:
+#        - whoami # (expect gitlab-runner)
+#        - pwd
+#        - sudo su cvswnighthsforg  || true # (expect to fail)
+#        - cvmfs_server transaction sw-nightlies.hsf.org
+#        - cvmfs_server abort -f sw-nightlies.hsf.org
 
 #stages:
 #    - prepare-spack
