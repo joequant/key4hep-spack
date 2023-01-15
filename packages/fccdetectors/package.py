@@ -17,6 +17,9 @@ class Fccdetectors(CMakePackage, Key4hepPackage):
     version("0.1pre07", tag="v0.1pre07")
     version("0.1pre06", tag="v0.1pre06")
 
+    patch('https://patch-diff.githubusercontent.com/raw/HEP-FCC/FCCDetectors/pull/38.patch', when='@0.1pre09',
+          sha256='ef8b377940415818394ea25fc47cd31a4e2732910d344ec59aa736eb7b72c287')
+
     depends_on('dd4hep')
     depends_on('lcgeo')
     depends_on('lcio')
