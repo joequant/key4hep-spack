@@ -151,7 +151,7 @@ build-spack-nightlies:
         - spack repo add ./sft-spack-repo
         - spack add key4hep-stack@${KEY4HEP_RELEASE_VERSION}
         # compile onwards and upwards
-        - spack add llvm
+        - spack add llvm@11.1.0
         - spack install ${SPACK_INSTALL_ARGUMENTS}
 
 
