@@ -37,6 +37,8 @@ class Lccontent(CMakePackage):
                 '-DCMAKE_CXX_FLAGS=-Wno-error'
 
         ]
+        if self.spec.satisfies('%clang'):
+            args.append('-DCMAKE_CXX_FLAGS=-Wno-error')
         return args
 
     def url_for_version(self, version):

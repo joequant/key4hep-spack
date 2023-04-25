@@ -17,6 +17,8 @@ class Aidatt(CMakePackage, Ilcsoftpackage):
     version('master', branch='master')
     version('0.10',     sha256='5379a369ee29bebeece7e814c0595bac9f08f2737ce03ae529b4b4e84dea1283')
 
+    # this cmake option conflicts with newer cxx compilers
+    patch('remove-usecxx11.patch')
     depends_on('ilcutil')
     depends_on('eigen')
     depends_on('generalbrokenlines')
