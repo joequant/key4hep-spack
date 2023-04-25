@@ -1,0 +1,20 @@
+diff --git a/cmake/aidaTT_default_cxx_flags.cmake b/cmake/aidaTT_default_cxx_flags.cmake
+index 726f47d..9a0e38e 100644
+--- a/cmake/aidaTT_default_cxx_flags.cmake
++++ b/cmake/aidaTT_default_cxx_flags.cmake
+@@ -23,15 +23,3 @@ FOREACH( FLAG ${COMPILER_FLAGS} )
+   ENDIF()
+ ENDFOREACH()
+ 
+-OPTION( USE_CXX11 "Use CXX Standard 2011" True )
+-IF( USE_CXX11 )
+-  SET( FLAG "-std=c++11" )
+-  CHECK_CXX_COMPILER_FLAG( ${FLAG} CXX_FLAG_WORKS_${FLAG} )
+-  IF( ${CXX_FLAG_WORKS_${FLAG}} )
+-    SET( CMAKE_CXX_FLAGS " ${FLAG} ${CMAKE_CXX_FLAGS}")
+-  ELSE()
+-    MESSAGE( FATAL_ERROR "Cannot add ${FLAG} to CMAKE_CXX_FLAGS, but c++11 was requested, check your compiler" )
+-  ENDIF()
+-ELSE()
+-  MESSAGE( STATUS "NOT building with CXX11 standard" )
+-ENDIF()
