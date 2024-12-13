@@ -33,6 +33,8 @@ class GuineaPig(CMakePackage):
     depends_on("fftw@2.0.0:2.9.9", when="+fftw2")
     depends_on("fftw@3.0.0:", when="+fftw3")
 
+    patch("register-type.patch")
+
     def cmake_args(self):
         args = []
 

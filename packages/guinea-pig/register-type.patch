@@ -1,0 +1,47 @@
+diff --git a/src/gridCPP.h b/src/gridCPP.h
+index fa1940f..50e09dd 100755
+--- a/src/gridCPP.h
++++ b/src/gridCPP.h
+@@ -408,10 +408,10 @@ class GENERAL_GRID
+       return (int)floor(z/get_delta_z()+0.5*(float)n_cell_z_);
+     }
+   
+-  inline void phiValuesX(int i1, int i2,register float h, const PHI_FLOAT * phi, PHI_FLOAT& phi1_x, PHI_FLOAT& phi2_x, PHI_FLOAT& phi3_x) const
++  inline void phiValuesX(int i1, int i2,REGISTER_FLOAT h, const PHI_FLOAT * phi, PHI_FLOAT& phi1_x, PHI_FLOAT& phi2_x, PHI_FLOAT& phi3_x) const
+     {
+       int j;
+-      register float h_p;
++      REGISTER_FLOAT h_p;
+       // 
+       //
+       h_p=1.0-h;
+@@ -421,10 +421,10 @@ class GENERAL_GRID
+       phi3_x=h*phi[j+n_cell_y_-1] + h_p*phi[j-1];
+     }
+ 
+-  inline void phiValuesY(int i1, int i2,register float h, const PHI_FLOAT * phi, PHI_FLOAT& phi1_y, PHI_FLOAT& phi2_y, PHI_FLOAT& phi3_y) const
++  inline void phiValuesY(int i1, int i2,REGISTER_FLOAT h, const PHI_FLOAT * phi, PHI_FLOAT& phi1_y, PHI_FLOAT& phi2_y, PHI_FLOAT& phi3_y) const
+     {
+       int j;
+-      register float h_p;
++      REGISTER_FLOAT h_p;
+       
+       h_p=1.0-h;
+       j=i1*n_cell_y_+i2;
+diff --git a/src/typeDefs.h b/src/typeDefs.h
+index b48dfb8..75e7c33 100755
+--- a/src/typeDefs.h
++++ b/src/typeDefs.h
+@@ -5,7 +5,11 @@
+ typedef double PHI_FLOAT;
+ typedef double JET_FLOAT;
+ typedef float PAIR_FLOAT;
+-
++#if defined(__clang__)
++#define REGISTER_FLOAT float
++#else
++#define REGISTER_FLOAT register float
++#endif
+ 
+ 
+ #endif
